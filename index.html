@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Visor de Turnos</title>
+  
+  <!-- PWA meta -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1e3a8a">
+
+  <style>
+    :root {
+      --primary: #1e3a8a; --primary-light: #dbeafe; --accent: #2563eb; --bg: #f8fafc; --surface: #ffffff;
+      --border: #cbd5e1; --text: #0f172a; --text-muted: #64748b; --weekend-bg: #fee2e2; --weekend-text: #991b1b;
+      --holiday-bg: #fef3c7; --holiday-text: #b45309; --guardia-text: #0f172a; --permission-stripe: rgba(99, 102, 241, 0.18);
+      --permission-text: #3730a3; --btn-print-month: #0d9488; --btn-print-nominal: #4f46e5; --btn-sync: #0284c7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { background-color: var(--bg); color: var(--text); padding: 16px; }
+    .container { width: 100%; max-width: 1600px; margin: 0 auto; background: var(--surface); border-radius: 10px; padding: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 2px solid var(--border); padding-bottom: 12px; margin-bottom: 14px; }
+    h1 { font-size: 1.3rem; color: var(--primary); }
+    
+    .header-status { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+    #status-msg { font-size: 0.8rem; font-weight: bold; color: #059669; display: none; padding: 4px 10px; border-radius: 12px; }
+    #last-sync-time { font-size: 0.85rem; color: var(--text-muted); }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #f0fdf4; padding:8px 12px; border-radius:6px; border:1px solid #bbf7d0;}
+    select, button { padding: 6px 10px; border-radius: 5px; border: 1px solid var(--border); font-size: 0.85rem; outline: none; background: var(--surface); color: var(--text); }
+    select#period-select { font-weight: bold; color: #166534; padding: 6px 14px;}
+    button { background-color: var(--accent); color: white; border: none; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: opacity 0.15s, background-color 0.15s; }
+    button:hover { opacity: 0.9; }
+    button.btn-print-month { background-color: var(--btn-print-month); } 
+    button.btn-print-nominal { background-color: var(--btn-print-nominal); } 
+    button.btn-sync { background-color: var(--btn-sync); }
+    button#install-btn { background-color: #7c3aed; display: none; }
+    
+    .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; font-size: 0.85rem; margin-bottom: 20px; background: #f1f5f9; padding: 10px; border-radius: 6px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    .box-sample { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 900; }
+    .box-guardia { background-color: transparent; color: var(--guardia-text); }
+    .box-permiso { background: repeating-linear-gradient(45deg, transparent, transparent 4px, var(--permission-stripe) 4px, var(--permission-stripe) 8px); color: var(--permission-text); }
+    .box-ambos { background: repeating-linear-gradient(45deg, transparent, transparent 4px, var(--permission-stripe) 4px, var(--permission-stripe) 8px); color: var(--primary); text-shadow: 0 0 2px #ffffff; }
+    .box-festivo { background-color: var(--holiday-bg); color: var(--holiday-text); border-color: #fde68a; }
+    .box-finde { background-color: var(--weekend-bg); color: var(--weekend-text); border-color: #fecaca; }
+
+    #visor-contenedor { display: flex; flex-direction: column; gap: 30px; }
+    .mes-titulo { font-size: 1.1rem; color: var(--primary); margin-bottom: 8px; text-transform: uppercase; font-weight: bold; border-left: 4px solid var(--primary); padding-left: 10px; }
+
+    .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
+    table.grid-table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: center; font-size: clamp(0.55rem, 1.4vw, 0.75rem); }
+    th, td { border: 1px solid var(--border); padding: 0; height: 30px; vertical-align: middle; overflow: hidden; white-space: nowrap; }
+    .col-worker { width: 160px; text-align: left; padding: 4px 8px; background: #f8fafc; font-size: clamp(0.6rem, 1.3vw, 0.75rem); position: sticky; left: 0; z-index: 2; font-weight: 600; }
+    thead th { background-color: var(--primary-light); color: var(--primary); font-weight: bold; height: 34px; user-select: none; }
+    thead th.col-worker { z-index: 3; }
+    
+    .weekday { font-size: clamp(0.5rem, 1.1vw, 0.65rem); font-weight: normal; display: block; line-height: 1; margin-top: 1px; color: #64748b;}
+    .weekend { background-color: var(--weekend-bg); color: var(--weekend-text); }
+    .holiday { background-color: var(--holiday-bg) !important; color: var(--holiday-text) !important; font-weight: bold; }
+    .holiday-cell { background-color: var(--holiday-bg) !important; color: var(--holiday-text) !important; }
+    
+    .cell-content { width: 100%; height: 100%; font-size: 0.8rem; font-weight: 900; display: flex; align-items: center; justify-content: center; padding: 0; margin: 0; }
+    .cell-content.active { color: var(--guardia-text) !important; }
+    .cell-content.is-permission { background: repeating-linear-gradient(45deg, transparent, transparent 4px, var(--permission-stripe) 4px, var(--permission-stripe) 8px); color: var(--permission-text); }
+    .cell-content.is-both { background: repeating-linear-gradient(45deg, transparent, transparent 4px, var(--permission-stripe) 4px, var(--permission-stripe) 8px) !important; color: #1e3a8a !important; font-weight: 900; text-shadow: 0 0 2px #ffffff; }
+    
+    @media print { @page { size: landscape; margin: 10mm; } body { padding: 0; background: white; } .container { box-shadow: none; padding: 0; max-width: 100%; } .controls, .header-status, .legend { display: none !important; } .table-wrapper { border: none; overflow: visible; margin-bottom: 40px; page-break-inside: avoid; } table.grid-table { font-size: 0.55rem; } .col-worker { width: 90px; font-size: 0.6rem; position: static; } th, td { height: 22px; } }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div>
+      <h1>📋 Visor de Turnos</h1>
+      <div class="header-status">
+        <span id="status-msg">✅ Sincronizado</span>
+        <span id="last-sync-time">📅 Última sincronización: Cargando...</span>
+      </div>
+    </div>
+    <div class="controls">
+      <div>
+        <label for="period-select" title="Elige de qué mes generar el PDF"><strong>Mes a exportar:</strong></label>
+        <select id="period-select"></select>
+      </div>
+      <button class="btn-sync" onclick="fetchNube()">🔄 Sincronizar</button>
+      <button class="btn-print-month" onclick="exportarCalendarioMesA4()">📄 Cuadrante</button>
+      <button class="btn-print-nominal" onclick="exportarCalendarioNominalA4()">📋 Nominal</button>
+      <button id="install-btn">📲 Instalar App</button>
+    </div>
+  </header>
+
+  <div class="legend">
+    <div class="legend-item"><div class="box-sample box-guardia">G</div> Guardia</div>
+    <div class="legend-item"><div class="box-sample box-permiso">P</div> Permiso</div>
+    <div class="legend-item"><div class="box-sample box-ambos">G/P</div> Guardia en Permiso</div>
+    <div class="legend-item"><div class="box-sample box-festivo"></div> Festivo</div>
+    <div class="legend-item"><div class="box-sample box-finde"></div> Fin de Semana</div>
+  </div>
+
+  <div id="visor-contenedor">
+    <!-- Aquí se inyectarán las tablas de todos los meses del rango -->
+  </div>
+</div>
+
+<script>
+  // ==========================================
+  // CLAVES DEL CENTRO DE SALUD (SACYL) - LECTURA
+  // ==========================================
+  const JSONBIN_KEY = "$2a$10$3uHasKqZPe7.8uwIkU4u7.EOzSEwSvKoa4JP6Lu090qxvd6ods6Dm";
+  const JSONBIN_ID = "6a841896da38895dfef1e95d";
+
+  const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  const diasSemanaMap = ["D", "L", "M", "X", "J", "V", "S"];
+
+  let trabajadores = [];
+  let asignaciones = {};
+  let festivos = {};
+  let permisos = {};
+  let configuracion = {};
+
+  const periodSelect = document.getElementById("period-select");
+  const visorContenedor = document.getElementById("visor-contenedor");
+  const statusMsg = document.getElementById("status-msg");
+  const lastSyncTime = document.getElementById("last-sync-time");
+
+  function getKey(year, month) { return `${year}-${month}`; }
+  function getDiasEnMes(year, month) { return new Date(year, month + 1, 0).getDate(); }
+  function esDiaFestivo(year, month, day) { const key = getKey(year, month); return Boolean(festivos[key] && festivos[key].includes(day)); }
+  function tienePermiso(workerIdx, year, month, day) { const key = getKey(year, month); return Boolean(permisos[key] && permisos[key][workerIdx] && permisos[key][workerIdx].includes(day)); }
+  function escapeHtml(str) { if (!str) return ""; const div = document.createElement("div"); div.textContent = str; return div.innerHTML; }
+  
+  function mostrarNotificacion(texto, bg = "#d1fae5", color = "#065f46") {
+    statusMsg.textContent = texto;
+    statusMsg.style.backgroundColor = bg;
+    statusMsg.style.color = color;
+    statusMsg.style.display = "inline-block";
+    clearTimeout(window._notifTimeout);
+    window._notifTimeout = setTimeout(() => { statusMsg.style.display = "none"; }, 3500);
+  }
+
+  function actualizarHoraSincronizacion() {
+    const ahora = new Date();
+    const fecha = ahora.toLocaleDateString('es-ES');
+    const hora = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    lastSyncTime.innerHTML = `📅 Última sincronización: <strong>${fecha} a las ${hora}</strong>`;
+  }
+
+  async function fetchNube() {
+    mostrarNotificacion("⏳ Sincronizando...", "#fef3c7", "#d97706");
+    try {
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`, {
+        headers: { 'X-Master-Key': JSONBIN_KEY },
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const p = data.record;
+        if (p) {
+          if(p.trabajadores) trabajadores = p.trabajadores;
+          if(p.asignaciones) asignaciones = p.asignaciones;
+          if(p.festivos) festivos = p.festivos;
+          if(p.permisos) permisos = p.permisos;
+          
+          if(p.configuracion) {
+            configuracion = p.configuracion;
+            if (configuracion.visorMonth !== undefined && configuracion.visorStartMonth === undefined) {
+               configuracion.visorStartMonth = configuracion.visorMonth;
+               configuracion.visorStartYear = configuracion.visorYear;
+               configuracion.visorEndMonth = (configuracion.visorMonth + 1) % 12;
+               configuracion.visorEndYear = configuracion.visorMonth === 11 ? configuracion.visorYear + 1 : configuracion.visorYear;
+            }
+          }
+          actualizarHoraSincronizacion();
+          mostrarNotificacion("✅ Cuadrante actualizado");
+          prepararYRenderizar();
+        }
+      } else {
+        mostrarNotificacion("⚠️ Error al conectar", "#fee2e2", "#991b1b");
+      }
+    } catch (e) {
+      console.error("Error cargando nube:", e);
+      mostrarNotificacion("❌ Modo sin red", "#fee2e2", "#ef4444");
+    }
+  }
+
+  function prepararYRenderizar() {
+    periodSelect.innerHTML = "";
+    let mesTemp = configuracion.visorStartMonth;
+    let añoTemp = configuracion.visorStartYear;
+    const fechaFin = new Date(configuracion.visorEndYear, configuracion.visorEndMonth, 1);
+    const fechaInicio = new Date(añoTemp, mesTemp, 1);
+    
+    if (fechaInicio > fechaFin) {
+        visorContenedor.innerHTML = `<h3 style="color:red; text-align:center;">Error de configuración en el Maestro: Rango de meses inválido.</h3>`;
+        return;
+    }
+
+    while (new Date(añoTemp, mesTemp, 1) <= fechaFin) {
+        let opt = document.createElement("option");
+        opt.value = `${añoTemp}-${mesTemp}`;
+        opt.textContent = `${meses[mesTemp]} ${añoTemp}`;
+        periodSelect.appendChild(opt);
+        mesTemp++;
+        if (mesTemp > 11) { mesTemp = 0; añoTemp++; }
+    }
+    dibujarRangoMeses();
+  }
+
+  function dibujarRangoMeses() {
+    visorContenedor.innerHTML = ""; 
+    let mesActual = configuracion.visorStartMonth;
+    let añoActual = configuracion.visorStartYear;
+    const fechaFin = new Date(configuracion.visorEndYear, configuracion.visorEndMonth, 1);
+
+    while (new Date(añoActual, mesActual, 1) <= fechaFin) {
+        const tablaMesHTML = generarTablaMes(añoActual, mesActual);
+        visorContenedor.appendChild(tablaMesHTML);
+        mesActual++;
+        if (mesActual > 11) { mesActual = 0; añoActual++; }
+    }
+  }
+
+  function generarTablaMes(year, month) {
+    const contenedor = document.createElement("div");
+    contenedor.className = "table-wrapper";
+
+    const titulo = document.createElement("div");
+    titulo.className = "mes-titulo";
+    titulo.textContent = `${meses[month]} ${year}`;
+    contenedor.insertBefore(titulo, contenedor.firstChild);
+
+    const tabla = document.createElement("table");
+    tabla.className = "grid-table";
+    
+    const totalDias = getDiasEnMes(year, month);
+    const key = getKey(year, month);
+    const currentMonthAsign = asignaciones[key] || {};
+
+    const thead = document.createElement("thead");
+    const trCabecera = document.createElement("tr");
+    
+    const thMedico = document.createElement("th");
+    thMedico.className = "col-worker";
+    thMedico.textContent = "Médico";
+    trCabecera.appendChild(thMedico);
+
+    for (let d = 1; d <= totalDias; d++) {
+      const fecha = new Date(year, month, d);
+      const diaSemanaIdx = fecha.getDay();
+      const esFinDeSemana = (diaSemanaIdx === 0 || diaSemanaIdx === 6);
+      const esFest = esDiaFestivo(year, month, d);
+
+      const th = document.createElement("th");
+      if (esFest) th.className = "holiday";
+      else if (esFinDeSemana) th.className = "weekend";
+
+      th.innerHTML = `${d}<span class="weekday">${diasSemanaMap[diaSemanaIdx]}</span>`;
+      trCabecera.appendChild(th);
+    }
+    thead.appendChild(trCabecera);
+    tabla.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    
+    trabajadores.forEach((nombre, wIdx) => {
+      const tr = document.createElement("tr");
+      
+      const tdNombre = document.createElement("td");
+      tdNombre.className = "col-worker";
+      tdNombre.textContent = nombre;
+      tr.appendChild(tdNombre);
+
+      for (let d = 1; d <= totalDias; d++) {
+        const td = document.createElement("td");
+        const fecha = new Date(year, month, d);
+        const diaSemanaIdx = fecha.getDay();
+        const esFinDeSemana = (diaSemanaIdx === 0 || diaSemanaIdx === 6);
+        const esFest = esDiaFestivo(year, month, d);
+
+        if (esFest) td.className = "holiday-cell";
+        else if (esFinDeSemana) td.className = "weekend";
+
+        const estaAsignado = currentMonthAsign[d] === wIdx;
+        const estaEnPermiso = tienePermiso(wIdx, year, month, d);
+
+        const cellDiv = document.createElement("div");
+        let clases = "cell-content";
+        let contenido = "";
+        
+        if (estaAsignado && estaEnPermiso) {
+            clases += " is-both"; contenido = "G / P";
+        } else if (estaAsignado) {
+            clases += " active"; contenido = "G";
+        } else if (estaEnPermiso) {
+            clases += " is-permission"; contenido = "P";
+        }
+
+        cellDiv.className = clases;
+        cellDiv.textContent = contenido;
+        td.appendChild(cellDiv);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+    
+    tabla.appendChild(tbody);
+    contenedor.appendChild(titulo);
+    contenedor.appendChild(tabla);
+    return contenedor;
+  }
+
+  function getSelectedYear() { return parseInt(periodSelect.value.split('-')[0]); }
+  function getSelectedMonth() { return parseInt(periodSelect.value.split('-')[1]); }
+
+  // ================================================================
+  //  EXPORTACIÓN A PDFs (funciona con window.open, en PWA se abrirá en una nueva pestaña)
+  // ================================================================
+  function exportarCalendarioNominalA4() {
+    if (!periodSelect.value) return alert("Selecciona un mes para exportar.");
+    const year = getSelectedYear(); const month = getSelectedMonth(); const nombreMes = meses[month]; const totalDias = getDiasEnMes(year, month); const key = getKey(year, month); const currentMonthAsign = asignaciones[key] || {}; const fechaImpresion = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    let htmlNominal = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Calendario Nominal - ${nombreMes} ${year}</title><style>@page{size:A4 portrait;margin:6mm 10mm;}*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;}body{background-color:#ffffff;color:#0f172a;padding:2px;}.print-header{text-align:center;border-bottom:2px solid #1e3a8a;padding-bottom:6px;margin-bottom:8px;}.main-title{font-size:1.3rem;font-weight:900;color:#1e3a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;}.sub-title{font-size:1rem;font-weight:800;color:#334155;letter-spacing:0.5px;}table.nominal-table{width:100%;border-collapse:collapse;font-size:0.8rem;text-align:center;}table.nominal-table th,table.nominal-table td{border:1px solid #94a3b8;padding:2px 8px;vertical-align:middle;height:20px;}table.nominal-table th{background-color:#f1f5f9;color:#1e293b;font-weight:bold;font-size:0.85rem;}.col-dia{width:38%;}.col-medico{width:62%;text-align:left;padding-left:14px;font-weight:600;}.bg-finde{background-color:#fee2e2 !important;color:#991b1b !important;}.bg-festivo{background-color:#fef3c7 !important;color:#b45309 !important;}.print-footer-container{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;padding:0 4px;font-size:0.75rem;color:#334155;position:relative;}.print-signature{font-weight:700;margin:0 auto;text-align:center;width:100%;}.print-footer-date{font-weight:700;position:absolute;right:0;}.btn-print-floating{position:fixed;top:12px;right:12px;background:#1e3a8a;color:white;border:none;padding:8px 14px;border-radius:6px;font-weight:bold;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);}@media print{.btn-print-floating{display:none !important;}body{padding:0;}tr{page-break-inside:avoid;break-inside:avoid;}}</style></head><body><button class="btn-print-floating" onclick="window.print()">🖨️ Imprimir / Guardar en PDF</button><div class="print-header"><div class="main-title">CENTRO DE SALUD DE VILLARRAMIEL</div><div class="sub-title">MES DE ${nombreMes.toUpperCase()} ${year}</div></div><table class="nominal-table"><thead><tr><th class="col-dia">Día</th><th class="col-medico">Médico de Guardia</th></tr></thead><tbody>`;
+    for (let d = 1; d <= totalDias; d++) {
+      const fecha = new Date(year, month, d); const diaSemanaIdx = fecha.getDay(); const nombreDiaSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][diaSemanaIdx]; const esFinDeSemana = diaSemanaIdx === 0 || diaSemanaIdx === 6; const esFest = esDiaFestivo(year, month, d);
+      let cls = ""; if (esFest) cls = "bg-festivo"; else if (esFinDeSemana) cls = "bg-finde";
+      const wIdx = currentMonthAsign[d]; let medicoTexto = "— Sin asignar —"; let styleColor = "#94a3b8";
+      if (wIdx !== undefined && trabajadores[wIdx]) { const nombreMedico = trabajadores[wIdx]; const enPermisoDia = tienePermiso(wIdx, year, month, d); if (enPermisoDia) { medicoTexto = `${nombreMedico} (G / Permiso)`; } else { medicoTexto = nombreMedico; } styleColor = "#0f172a"; }
+      htmlNominal += `<tr><td class="${cls}" style="font-weight: bold;">Día ${d} (${nombreDiaSemana})</td><td class="col-medico" style="color: ${styleColor};">${escapeHtml(medicoTexto)}</td></tr>`;
+    }
+    htmlNominal += `</tbody></table><div class="print-footer-container"><div class="print-signature">Fdo: Juan Manuel Monge Aramburu</div><div class="print-footer-date">${fechaImpresion}</div></div><script>window.onload = function(){setTimeout(function(){window.print();},400);};<\/script></body></html>`;
+    const printWin = window.open("", "_blank"); if (printWin) { printWin.document.open(); printWin.document.write(htmlNominal); printWin.document.close(); }
+  }
+
+  function exportarCalendarioMesA4() {
+    if (!periodSelect.value) return alert("Selecciona un mes para exportar.");
+    const year = getSelectedYear(); const month = getSelectedMonth(); const nombreMes = meses[month]; const totalDias = getDiasEnMes(year, month); const key = getKey(year, month); const currentMonthAsign = asignaciones[key] || {}; const fechaImpresion = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    let htmlA4 = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cuadrante - ${nombreMes} ${year}</title><style>@page{size:A4 landscape;margin:8mm 10mm;}*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;}body{background-color:#ffffff;color:#0f172a;padding:8px;}.print-header{text-align:center;border-bottom:2px solid #1e3a8a;padding-bottom:12px;margin-bottom:12px;page-break-inside:avoid;break-inside:avoid;}.main-title{font-size:1.65rem;font-weight:900;color:#1e3a8a;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;}.sub-title{font-size:1.65rem;font-weight:900;color:#0f172a;margin-top:6px;margin-bottom:0px;letter-spacing:0.5px;}.header-spacer{height:38px;}.legend{display:flex;justify-content:center;gap:20px;font-size:0.8rem;align-items:center;margin-top:0px;}.legend-item{display:flex;align-items:center;gap:6px;}.box-sample{width:18px;height:18px;border-radius:3px;border:1px solid #cbd5e1;display:inline-block;text-align:center;line-height:17px;font-size:0.75rem;font-weight:900;}.box-guardia{background-color:transparent;color:#0f172a;border-color:#94a3b8;}.box-permiso{background-color:#e0e7ff;color:#3730a3;border-color:#c7d2fe;}.box-festivo{background-color:#fef3c7;color:#b45309;border-color:#fde68a;}.box-finde{background-color:#fee2e2;color:#991b1b;border-color:#fecaca;}table.cal-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:0.75rem;text-align:center;page-break-inside:avoid;break-inside:avoid;}th,td{border:1px solid #94a3b8;height:44px;vertical-align:middle;overflow:hidden;}th{background-color:#f1f5f9;color:#1e293b;font-weight:bold;}th.col-worker,td.col-worker{width:135px;text-align:left;padding-left:6px;font-weight:700;background-color:#f8fafc;}.th-day-num{font-size:0.82rem;}.th-day-name{font-size:0.62rem;font-weight:normal;color:#64748b;}.bg-finde{background-color:#fee2e2 !important;color:#991b1b !important;}.bg-festivo{background-color:#fef3c7 !important;color:#b45309 !important;}.cell-guardia-text{color:#0f172a !important;font-weight:900 !important;font-size:1.05rem;}.cell-permiso-pattern{background:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(99, 102, 241, 0.22) 4px,rgba(99, 102, 241, 0.22) 8px) !important;color:#3730a3 !important;font-weight:800;font-size:0.75rem;}.print-footer-container{display:flex;justify-content:space-between;align-items:flex-end;margin-top:24px;padding:0 10px;font-size:0.85rem;color:#334155;position:relative;page-break-inside:avoid;break-inside:avoid;}.print-signature{font-weight:700;margin:0 auto;text-align:center;width:100%;}.print-footer-date{font-weight:700;position:absolute;right:10mm;}.btn-print-floating{position:fixed;top:12px;right:12px;background:#1e3a8a;color:white;border:none;padding:8px 14px;border-radius:6px;font-weight:bold;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);}@media print{.btn-print-floating{display:none !important;}body{padding:0;}tr{page-break-inside:avoid;break-inside:avoid;}}</style></head><body><button class="btn-print-floating" onclick="window.print()">🖨️ Imprimir / Guardar en PDF</button><div class="print-header"><div class="main-title">CENTRO DE SALUD DE VILLARRAMIEL</div><div class="sub-title">MES DE ${nombreMes.toUpperCase()} ${year}</div><div class="header-spacer"></div><div class="legend"><div class="legend-item"><span class="box-sample box-guardia">G</span> Guardia</div><div class="legend-item"><span class="box-sample box-permiso">P</span> Permisos</div><div class="legend-item"><span class="box-sample box-festivo">F</span> Festivo</div><div class="legend-item"><span class="box-sample box-finde">S/D</span> Fin de Semana</div></div></div><table class="cal-table"><thead><tr><th class="col-worker">Médico</th>`;
+    for (let d = 1; d <= totalDias; d++) {
+      const fecha = new Date(year, month, d); const diaSemanaIdx = fecha.getDay(); const esFinDeSemana = diaSemanaIdx === 0 || diaSemanaIdx === 6; const esFest = esDiaFestivo(year, month, d);
+      let cls = ""; if (esFest) cls = "bg-festivo"; else if (esFinDeSemana) cls = "bg-finde";
+      htmlA4 += `<th class="${cls}"><div class="th-day-num">${d}</div><div class="th-day-name">${diasSemanaMap[diaSemanaIdx]}</div></th>`;
+    }
+    htmlA4 += `</tr></thead><tbody>`;
+    trabajadores.forEach((nombre, wIdx) => {
+      htmlA4 += `<tr><td class="col-worker">${escapeHtml(nombre)}</td>`;
+      for (let d = 1; d <= totalDias; d++) {
+        const fecha = new Date(year, month, d); const diaSemanaIdx = fecha.getDay(); const esFinDeSemana = diaSemanaIdx === 0 || diaSemanaIdx === 6; const esFest = esDiaFestivo(year, month, d);
+        const estaAsignado = currentMonthAsign[d] === wIdx; const estaEnPermiso = tienePermiso(wIdx, year, month, d);
+        let classes = []; if (esFest) classes.push("bg-festivo"); else if (esFinDeSemana) classes.push("bg-finde");
+        if (estaEnPermiso && !estaAsignado) classes.push("cell-permiso-pattern"); else if (estaAsignado) classes.push("cell-guardia-text");
+        let cellText = ""; if (estaAsignado && estaEnPermiso) cellText = "G / P"; else if (estaAsignado) cellText = "G"; else if (estaEnPermiso) cellText = "P";
+        htmlA4 += `<td class="${classes.join(' ')}">${cellText}</td>`;
+      }
+      htmlA4 += `</tr>`;
+    });
+    htmlA4 += `</tbody></table><div class="print-footer-container"><div class="print-signature">Fdo: Juan Manuel Monge Aramburu</div><div class="print-footer-date">${fechaImpresion}</div></div><script>window.onload = function(){setTimeout(function(){window.print();},400);};<\/script></body></html>`;
+    const printWin = window.open("", "_blank"); if (printWin) { printWin.document.open(); printWin.document.write(htmlA4); printWin.document.close(); }
+  }
+
+  // ================================================================
+  //  REGISTRO DEL SERVICE WORKER Y BOTÓN DE INSTALACIÓN
+  // ================================================================
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('SW registrado:', reg))
+        .catch(err => console.error('Error al registrar SW:', err));
+    });
+  }
+
+  // Botón de instalación (para dispositivos que lo soporten)
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const installBtn = document.getElementById('install-btn');
+    installBtn.style.display = 'inline-flex';
+    installBtn.addEventListener('click', () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choice) => {
+          if (choice.outcome === 'accepted') {
+            console.log('Usuario aceptó la instalación');
+          } else {
+            console.log('Usuario rechazó la instalación');
+          }
+          deferredPrompt = null;
+          installBtn.style.display = 'none';
+        });
+      }
+    });
+  });
+
+  window.addEventListener('appinstalled', () => {
+    console.log('App instalada correctamente');
+    document.getElementById('install-btn').style.display = 'none';
+  });
+
+  // Inicio: cargar datos
+  fetchNube();
+</script>
+</body>
+</html>
